@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState } from "react"
 import Layout from "@/components/Layout"
 import Dashboard from "@/pages/Dashboard"
 import Expenses from "@/pages/Expenses"
@@ -7,24 +7,21 @@ import Categories from "@/pages/Categories"
 
 type Page = "dashboard" | "expenses" | "add" | "categories"
 
+// Only one page is rendered at a time, so every page remounts (and refetches)
+// on navigation — no global refresh key is needed.
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard")
-  const [refreshKey, setRefreshKey] = useState(0)
-
-  const handleSuccess = useCallback(() => {
-    setRefreshKey(k => k + 1)
-  }, [])
 
   const renderPage = () => {
     switch (page) {
       case "dashboard":
-        return <Dashboard key={`dash-${refreshKey}`} />
+        return <Dashboard />
       case "expenses":
-        return <Expenses key={`exp-${refreshKey}`} />
+        return <Expenses />
       case "add":
-        return <AddExpense key={`add-${refreshKey}`} onSuccess={() => { handleSuccess(); setPage("expenses") }} />
+        return <AddExpense />
       case "categories":
-        return <Categories key={`cat-${refreshKey}`} />
+        return <Categories />
     }
   }
 

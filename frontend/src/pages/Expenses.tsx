@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import { getExpenses, deleteExpense, getCategories, Category, Expense } from "@/lib/api"
-import { Trash2, Search, ChevronLeft, ChevronRight } from "lucide-react"
+import { getExpenses, deleteExpense, updateExpense, getCategories, exportCsvUrl, receiptUrl, Category, Expense } from "@/lib/api"
+import { Trash2, Search, ChevronLeft, ChevronRight, Pencil, Download, Paperclip } from "lucide-react"
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -16,11 +17,29 @@ export default function Expenses() {
   const [page, setPage] = useState(1)
   const [categories, setCategories] = useState<Category[]>([])
   const [filterCategory, setFilterCategory] = useState("all")
+  const [keywordInput, setKeywordInput] = useState("")
   const [keyword, setKeyword] = useState("")
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
   const [loading, setLoading] = useState(true)
   const [deleteId, setDeleteId] = useState<number | null>(null)
+
+  // Edit dialog state
+  const [editing, setEditing] = useState<Expense | null>(null)
+  const [editAmount, setEditAmount] = useState("")
+  const [editCategoryId, setEditCategoryId] = useState("")
+  const [editDate, setEditDate] = useState("")
+  const [editNote, setEditNote] = useState("")
+  const [editError, setEditError] = useState("")
+
+  // Debounce keyword so we don't hit the API on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setKeyword(keywordInput)
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [keywordInput])
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -54,11 +73,50 @@ export default function Expenses() {
     fetchData()
   }
 
+  const openEdit = (e: Expense) => {
+    setEditing(e)
+    setEditAmount(String(e.amount))
+    setEditCategoryId(String(e.category_id))
+    setEditDate(e.date)
+    setEditNote(e.note)
+    setEditError("")
+  }
+
+  const handleEditSave = async () => {
+    if (!editing) return
+    const amount = parseFloat(editAmount)
+    if (isNaN(amount) || amount <= 0 || !editDate || !editCategoryId) {
+      setEditError("请填写有效的金额、分类和日期")
+      return
+    }
+    try {
+      await updateExpense(editing.id, {
+        amount,
+        category_id: parseInt(editCategoryId),
+        date: editDate,
+        note: editNote,
+        // Keep the attached receipt: the update endpoint overwrites all fields
+        receipt_path: editing.receipt_path,
+      })
+      setEditing(null)
+      fetchData()
+    } catch (err) {
+      setEditError(`保存失败：${err}`)
+    }
+  }
+
   const totalPages = Math.ceil(total / 20)
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">账单</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">账单</h1>
+        <Button variant="outline" size="sm" asChild>
+          <a href={exportCsvUrl} download>
+            <Download className="size-4" /> 导出 CSV
+          </a>
+        </Button>
+      </div>
 
       {/* Filters */}
       <Card>
@@ -70,8 +128,8 @@ export default function Expenses() {
                 <Input
                   placeholder="搜索备注..."
                   className="pl-8"
-                  value={keyword}
-                  onChange={e => { setKeyword(e.target.value); setPage(1) }}
+                  value={keywordInput}
+                  onChange={e => setKeywordInput(e.target.value)}
                 />
               </div>
             </div>
@@ -123,7 +181,7 @@ export default function Expenses() {
                     <TableHead>分类</TableHead>
                     <TableHead className="text-right">金额</TableHead>
                     <TableHead>备注</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead className="w-28"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -138,8 +196,23 @@ export default function Expenses() {
                       </TableCell>
                       <TableCell className="text-right font-medium">{formatCurrency(e.amount)}</TableCell>
                       <TableCell className="text-muted-foreground max-w-[200px] truncate">{e.note || "-"}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(e.id)}>
+                      <TableCell className="text-right">
+                        {e.receipt_path && (
+                          <Button variant="ghost" size="icon" asChild>
+                            <a
+                              href={receiptUrl(e.receipt_path)}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label="查看账单图片"
+                            >
+                              <Paperclip className="size-4 text-muted-foreground" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" aria-label="编辑" onClick={() => openEdit(e)}>
+                          <Pencil className="size-4 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label="删除" onClick={() => setDeleteId(e.id)}>
                           <Trash2 className="size-4 text-muted-foreground" />
                         </Button>
                       </TableCell>
@@ -174,6 +247,51 @@ export default function Expenses() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit dialog */}
+      <Dialog open={editing !== null} onOpenChange={(open) => { if (!open) setEditing(null) }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>编辑支出</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>金额 *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={editAmount}
+                onChange={e => setEditAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>分类 *</Label>
+              <Select value={editCategoryId} onValueChange={setEditCategoryId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择分类" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.emoji} {c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>日期 *</Label>
+              <Input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>备注</Label>
+              <Input value={editNote} onChange={e => setEditNote(e.target.value)} placeholder="买了什么..." />
+            </div>
+            {editError && <p className="text-sm text-destructive">{editError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditing(null)}>取消</Button>
+              <Button onClick={handleEditSave}>保存</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete dialog */}
       <Dialog open={deleteId !== null} onOpenChange={() => setDeleteId(null)}>

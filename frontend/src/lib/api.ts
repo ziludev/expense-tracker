@@ -1,5 +1,9 @@
 const API_BASE = "/api"
 
+// URL builders for plain <a> links, so pages never hardcode the API prefix
+export const exportCsvUrl = `${API_BASE}/export/csv`
+export const receiptUrl = (filename: string) => `${API_BASE}/receipts/${encodeURIComponent(filename)}`
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, {
     headers: { "Content-Type": "application/json" },
@@ -64,10 +68,20 @@ export const getExpenses = (params: {
   return request<ExpenseListResponse>(`/expenses?${sp}`)
 }
 
-export const createExpense = (body: { amount: number; category_id: number; date: string; note: string }) =>
+// receipt_path: filename under backend uploads/, returned by the OCR API;
+// pass it through so the uploaded image gets linked to the expense
+export interface ExpensePayload {
+  amount: number
+  category_id: number
+  date: string
+  note: string
+  receipt_path?: string
+}
+
+export const createExpense = (body: ExpensePayload) =>
   request<Expense>("/expenses", { method: "POST", body: JSON.stringify(body) })
 
-export const updateExpense = (id: number, body: { amount: number; category_id: number; date: string; note: string }) =>
+export const updateExpense = (id: number, body: ExpensePayload) =>
   request<Expense>(`/expenses/${id}`, { method: "PUT", body: JSON.stringify(body) })
 
 export const deleteExpense = (id: number) =>
@@ -87,6 +101,11 @@ export const ocrReceipt = async (file: File): Promise<OCRResult> => {
   const form = new FormData()
   form.append("file", file)
   const res = await fetch(`${API_BASE}/ocr`, { method: "POST", body: form })
+  if (!res.ok) {
+    // 413/415/500 return {detail}, not an OCRResult — normalize the shape
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    return { success: false, error: err.detail || `HTTP ${res.status}` }
+  }
   return res.json()
 }
 

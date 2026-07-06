@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { getCategories, createCategory, updateCategory, deleteCategory, Category } from "@/lib/api"
 import { Plus, Pencil, Trash2 } from "lucide-react"
 
@@ -14,6 +14,7 @@ export default function Categories() {
   const [categories, setCategories] = useState<Category[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Category | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null)
   const [name, setName] = useState("")
   const [emoji, setEmoji] = useState("💰")
   const [color, setColor] = useState("#6b7280")
@@ -58,9 +59,10 @@ export default function Categories() {
     fetchData()
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("删除分类将同时删除该分类下所有支出，确定？")) return
-    await deleteCategory(id)
+  const handleDelete = async () => {
+    if (!deleteTarget) return
+    await deleteCategory(deleteTarget.id)
+    setDeleteTarget(null)
     fetchData()
   }
 
@@ -93,7 +95,7 @@ export default function Categories() {
                   <Button variant="ghost" size="icon" onClick={() => openEdit(cat)}>
                     <Pencil className="size-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => handleDelete(cat.id)}>
+                  <Button variant="ghost" size="icon" aria-label="删除" onClick={() => setDeleteTarget(cat)}>
                     <Trash2 className="size-4 text-muted-foreground" />
                   </Button>
                 </div>
@@ -102,6 +104,22 @@ export default function Categories() {
           ))}
         </div>
       )}
+
+      {/* Delete confirmation dialog (deleting cascades to all expenses in it) */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除分类</DialogTitle>
+          </DialogHeader>
+          <p className="text-muted-foreground">
+            删除「{deleteTarget?.emoji} {deleteTarget?.name}」将同时删除该分类下的<span className="text-destructive font-medium">所有支出记录</span>，此操作无法恢复。
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>取消</Button>
+            <Button variant="destructive" onClick={handleDelete}>删除</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit/Create dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

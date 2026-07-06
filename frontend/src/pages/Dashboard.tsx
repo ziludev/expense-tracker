@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, toLocalDateString, shiftMonth } from "@/lib/utils"
 import { getSummary, getTrend, getByCategory, getBudgets, setBudget, Summary, TrendPoint, CategoryStat, Budget } from "@/lib/api"
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -21,7 +21,7 @@ export default function Dashboard() {
   const [budgetAmount, setBudgetAmount] = useState("")
   const [loading, setLoading] = useState(true)
 
-  const currentMonth = new Date().toISOString().slice(0, 7)
+  const currentMonth = toLocalDateString().slice(0, 7)
   const [month, setMonth] = useState(currentMonth)
 
   const fetchData = async () => {
@@ -67,16 +67,10 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">概览</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => {
-            const d = new Date(month)
-            d.setMonth(d.getMonth() - 1)
-            setMonth(d.toISOString().slice(0, 7))
-          }}>上个月</Button>
+          <Button variant="outline" size="sm" onClick={() => setMonth(m => shiftMonth(m, -1))}>上个月</Button>
           <span className="font-medium min-w-[100px] text-center">{month}</span>
           <Button variant="outline" size="sm" onClick={() => {
-            const d = new Date(month)
-            d.setMonth(d.getMonth() + 1)
-            const next = d.toISOString().slice(0, 7)
+            const next = shiftMonth(month, 1)
             if (next <= currentMonth) setMonth(next)
           }} disabled={month >= currentMonth}>下个月</Button>
         </div>
@@ -113,7 +107,11 @@ export default function Dashboard() {
             <div className="text-2xl font-bold">
               {currentBudget ? formatCurrency(currentBudget.amount) : "-"}
             </div>
-            <Dialog open={budgetDialogOpen} onOpenChange={setBudgetDialogOpen}>
+            <Dialog open={budgetDialogOpen} onOpenChange={(open) => {
+              setBudgetDialogOpen(open)
+              // Prefill with the current budget so "修改" starts from the existing value
+              if (open) setBudgetAmount(currentBudget ? String(currentBudget.amount) : "")
+            }}>
               <DialogTrigger asChild>
                 <Button variant="link" size="sm" className="h-auto p-0 text-xs">
                   {currentBudget ? "修改" : "设置预算"}
@@ -175,7 +173,7 @@ export default function Dashboard() {
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                 <XAxis dataKey="date" tickFormatter={(v: string) => v.slice(-2)} fontSize={12} />
                 <YAxis fontSize={12} tickFormatter={(v: number) => `¥${v}`} />
-                <Tooltip formatter={(v: number) => [formatCurrency(v), "支出"]} labelFormatter={(l: string) => l} />
+                <Tooltip formatter={(v) => [formatCurrency(Number(v ?? 0)), "支出"]} />
                 <Line type="monotone" dataKey="amount" stroke="var(--chart-1)" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -200,13 +198,13 @@ export default function Dashboard() {
                     cx="50%"
                     cy="50%"
                     outerRadius={90}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                   >
                     {categories.filter(c => c.total > 0).map((c) => (
                       <Cell key={c.id} fill={c.color} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  <Tooltip formatter={(v) => formatCurrency(Number(v ?? 0))} />
                 </PieChart>
               </ResponsiveContainer>
             )}

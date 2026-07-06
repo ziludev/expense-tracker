@@ -4,3 +4,7 @@ paddlepaddle>=3.3.0
 paddleocr>=3.7.0
 Pillow>=10.0.0
 python-multipart>=0.0.12
+
+# dev/test
+pytest>=8.0.0
+httpx>=0.27.0

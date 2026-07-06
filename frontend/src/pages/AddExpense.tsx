@@ -5,18 +5,21 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { toLocalDateString } from "@/lib/utils"
 import { getCategories, createExpense, ocrReceipt, Category, OCRResult } from "@/lib/api"
 import { Upload, Camera, Loader2, CheckCircle } from "lucide-react"
 
-export default function AddExpense({ onSuccess }: { onSuccess: () => void }) {
+export default function AddExpense() {
   const [categories, setCategories] = useState<Category[]>([])
   const [amount, setAmount] = useState("")
   const [categoryId, setCategoryId] = useState("")
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  // Local-timezone date: toISOString() would give yesterday before 08:00 UTC+8
+  const [date, setDate] = useState(toLocalDateString())
   const [note, setNote] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [ocrLoading, setOcrLoading] = useState(false)
   const [ocrResult, setOcrResult] = useState<OCRResult | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [message, setMessage] = useState("")
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -24,25 +27,52 @@ export default function AddExpense({ onSuccess }: { onSuccess: () => void }) {
     getCategories().then(setCategories).catch(console.error)
   }, [])
 
+  // Revoke the preview object URL on unmount (replacePreview covers replacement)
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
+    }
+  }, [previewUrl])
+
+  // Swap the preview object URL, revoking the old one to avoid leaks
+  const replacePreview = (next: string | null) => {
+    setPreviewUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev)
+      return next
+    })
+  }
+
+  const resetReceipt = () => {
+    setOcrResult(null)
+    replacePreview(null)
+    if (fileRef.current) fileRef.current.value = ""
+  }
+
   const handleSubmit = async () => {
+    const parsedAmount = parseFloat(amount)
     if (!amount || !categoryId || !date) {
       setMessage("请填写金额、分类和日期")
+      return
+    }
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setMessage("金额必须大于 0")
       return
     }
     setSubmitting(true)
     try {
       await createExpense({
-        amount: parseFloat(amount),
+        amount: parsedAmount,
         category_id: parseInt(categoryId),
         date,
         note,
+        // Link the uploaded receipt image (if any) to this expense
+        receipt_path: ocrResult?.receipt_path ?? "",
       })
       setAmount("")
       setCategoryId("")
       setNote("")
-      setOcrResult(null)
-      setMessage("✅ 添加成功！")
-      onSuccess()
+      resetReceipt()
+      setMessage("✅ 添加成功！可以继续记下一笔")
     } catch (e) {
       setMessage(`❌ 添加失败：${e}`)
     }
@@ -55,6 +85,7 @@ export default function AddExpense({ onSuccess }: { onSuccess: () => void }) {
 
     setOcrLoading(true)
     setOcrResult(null)
+    replacePreview(URL.createObjectURL(file))
     try {
       const result = await ocrReceipt(file)
       setOcrResult(result)
@@ -105,12 +136,20 @@ export default function AddExpense({ onSuccess }: { onSuccess: () => void }) {
             )}
           </Button>
 
+          {previewUrl && (
+            <img
+              src={previewUrl}
+              alt="账单预览"
+              className="mt-3 max-h-40 rounded-md border object-contain"
+            />
+          )}
+
           {ocrResult && (
             <div className="mt-3">
               {ocrResult.success ? (
                 <div className="space-y-2">
                   <p className="text-sm text-green-600 flex items-center gap-1">
-                    <CheckCircle className="size-4" /> 识别成功
+                    <CheckCircle className="size-4" /> 识别成功，图片将随支出一起保存
                   </p>
                   <div className="text-xs text-muted-foreground max-h-24 overflow-y-auto border rounded p-2">
                     {ocrResult.lines?.map((l, i) => (
@@ -140,6 +179,7 @@ export default function AddExpense({ onSuccess }: { onSuccess: () => void }) {
             <Input
               type="number"
               step="0.01"
+              min="0.01"
               placeholder="0.00"
               value={amount}
               onChange={e => setAmount(e.target.value)}

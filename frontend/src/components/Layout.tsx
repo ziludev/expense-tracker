@@ -21,11 +21,15 @@ export default function Layout({ children, page, setPage }: {
 }) {
   const [dark, setDark] = useState(() => {
     if (typeof window === "undefined") return false
+    // Persisted choice wins; fall back to the system preference
+    const saved = localStorage.getItem("theme")
+    if (saved) return saved === "dark"
     return window.matchMedia("(prefers-color-scheme: dark)").matches
   })
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark)
+    localStorage.setItem("theme", dark ? "dark" : "light")
   }, [dark])
 
   const navItems: { id: Page; label: string; icon: React.ElementType }[] = [
